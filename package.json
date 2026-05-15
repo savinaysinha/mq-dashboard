@@ -1,0 +1,24 @@
+{
+  "name": "mq-dashboard",
+  "version": "1.0.0",
+  "description": "React dashboard converted from static HTML/CSS/JS",
+  "main": "backend/server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 node backend/server.js",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "npm run dev:server"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "cross-env": "^10.1.0",
+    "vite": "^5.4.1"
+  }
+}
