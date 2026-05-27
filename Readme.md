@@ -63,14 +63,14 @@ Edit `config.json` and update the `queueManagers` array with your real server de
 |-----------|------------------------------------------------|
 | `name`    | Friendly label used internally                 |
 | `baseUrl` | Base URL of the IBM MQ REST API server         |
-| `qmName`  | Queue manager name as known to MQ (e.g. QMEPIS_P1) |
+| `qmName`  | Queue manager name as known to MQ (e.g. QM_1) |
 
 ### 3. Other config options (`config.json`)
 
 | Field                             | Default         | Description                               |
 |-----------------------------------|-----------------|-------------------------------------------|
 | `server.port`                     | `3000`          | Express server port                       |
-| `server.mqFilter`                 | `"EPIS"`        | Filter string for queue manager names     |
+| `server.mqFilter`                 | `"IS"`        | Filter string for queue manager names     |
 | `server.credentialExpiryHours`    | `4`             | Session expiry (username only persisted)  |
 | `server.DefaultListenerKeyword`   | `"APP"`         | Keyword to match the MQ listener name     |
 | `ui.refreshIntervalSeconds`       | `60`            | Auto-refresh interval                     |
