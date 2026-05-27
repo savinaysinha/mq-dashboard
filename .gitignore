@@ -1,4 +1,24 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+public/
+
+# Environment / secrets
 .env
+.env.*
+
+# Binary builds
 *.exe
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
+
+config.json

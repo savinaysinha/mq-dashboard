@@ -1,48 +1,59 @@
-// routes/qmgrRoutes.js
+// backend/routes/qmgrRoutes.js
 // All IBM MQ queue-manager proxy routes.
 //
 //   GET /api/qmgr              – list all queue managers
 //   GET /api/qmgr/:name        – queue manager status (DISPLAY QMSTATUS)
-//   GET /api/qmgr/:name/lstr   – listener status   (DISPLAY LSSTATUS)
-//   GET /api/qmgr/:name/chl    – channel status    (DISPLAY CHSTATUS)
-//   GET /api/qmgr/:name/queues – queue details      (REST queue API)
-//   GET /api/qmgr/:name/disp   – queue manager props (DISPLAY QMGR)
+//   GET /api/qmgr/:name/lstr   – listener status     (DISPLAY LSSTATUS)
+//   GET /api/qmgr/:name/chl    – channel status       (DISPLAY CHSTATUS)
+//   GET /api/qmgr/:name/queues – queue details        (REST queue API)
+//   GET /api/qmgr/:name/disp   – queue manager props  (DISPLAY QMGR)
 
 import { Router } from 'express';
-import { config, MQ_FILTER, QUEUE_FILTER, MQSC_COMMANDS, getQueueManagerBaseUrl } from '../config.js';
+import {
+  config,
+  MQ_FILTER,
+  QUEUE_FILTER,
+  MQSC_COMMANDS,
+  getQueueManagerBaseUrl,
+} from '../config.js';
 import { requireAuth } from '../utils/auth.js';
 import { parseMqscResponse, extractQueueDetails } from '../utils/mqParser.js';
 
 const router = Router();
 
-// All qmgr routes require Basic Auth — apply once at the router level
+// All qmgr routes require Basic Auth — applied once at router level
 router.use(requireAuth);
 
-// ─── Shared helpers ───────────────────────────────────────────────────────────
+// ─── Fetch timeout ────────────────────────────────────────────────────────────
+const UPSTREAM_TIMEOUT_MS = 10_000; // 10 seconds
 
-/** Standard headers for MQSC action (POST) calls */
+function fetchWithTimeout(url, options = {}) {
+  return fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
+}
+
+// ─── Shared header builders ───────────────────────────────────────────────────
+
 const mqscHeaders = (basicAuth) => ({
-  Authorization: `Basic ${basicAuth}`,
-  'Content-Type': 'application/json',
-  Accept: 'application/json',
+  Authorization:          `Basic ${basicAuth}`,
+  'Content-Type':         'application/json',
+  Accept:                 'application/json',
   'ibm-mq-rest-csrf-token': 'value',
 });
 
-/** Standard headers for REST GET calls */
 const mqRestHeaders = (basicAuth) => ({
-  Authorization: `Basic ${basicAuth}`,
+  Authorization:  `Basic ${basicAuth}`,
   'Content-Type': 'application/json',
-  Accept: 'application/json',
+  Accept:         'application/json',
 });
 
-/**
- * POSTs a single MQSC command to the MQ REST action endpoint and returns the
- * parsed response, or surfaces upstream errors in a consistent shape.
- */
-async function runMqscCommand(res, baseUrl, qmgrName, basicAuth, command) {
-  const payload = { type: 'runCommand', parameters: { command } };
+// ─── Shared MQSC command runner ───────────────────────────────────────────────
 
-  const upstream = await fetch(
+async function runMqscCommand(res, baseUrl, qmgrName, basicAuth, command) {
+  const payload  = { type: 'runCommand', parameters: { command } };
+  const upstream = await fetchWithTimeout(
     `${baseUrl}/ibmmq/rest/v1/admin/action/qmgr/${qmgrName}/mqsc`,
     { method: 'POST', headers: mqscHeaders(basicAuth), body: JSON.stringify(payload) }
   );
@@ -51,9 +62,9 @@ async function runMqscCommand(res, baseUrl, qmgrName, basicAuth, command) {
 
   if (!upstream.ok) {
     return res.status(upstream.status).json({
-      error: 'Upstream API returned an error',
+      error:          'Upstream API returned an error',
       upstreamStatus: upstream.status,
-      upstreamBody: bodyText,
+      upstreamBody:   bodyText,
     });
   }
 
@@ -61,7 +72,7 @@ async function runMqscCommand(res, baseUrl, qmgrName, basicAuth, command) {
     return res.json(parseMqscResponse(JSON.parse(bodyText)));
   } catch {
     return res.status(500).json({
-      error: 'Upstream response was not valid JSON',
+      error:        'Upstream response was not valid JSON',
       upstreamBody: bodyText,
     });
   }
@@ -71,57 +82,69 @@ async function runMqscCommand(res, baseUrl, qmgrName, basicAuth, command) {
 
 /**
  * GET /api/qmgr
- * Lists all queue managers from every configured server, filtered by MQ_FILTER.
+ * Lists all queue managers from every configured server in parallel,
+ * filtered by MQ_FILTER. Partial failures are surfaced as partialErrors.
  */
 router.get('/', async (req, res) => {
   try {
     const { basicAuth } = req;
-    const allQmgrs = [];
-    const errors = [];
 
-    for (const manager of config.queueManagers) {
-      try {
-        const upstream = await fetch(`${manager.baseUrl}/ibmmq/rest/v1/admin/qmgr`, {
-          method: 'GET',
-          headers: mqRestHeaders(basicAuth),
-        });
+    // Fix #7 — fetch all configured servers in parallel instead of sequentially
+    const results = await Promise.allSettled(
+      config.queueManagers.map(async (manager) => {
+        const upstream = await fetchWithTimeout(
+          `${manager.baseUrl}/ibmmq/rest/v1/admin/qmgr`,
+          { method: 'GET', headers: mqRestHeaders(basicAuth) }
+        );
 
         const bodyText = await upstream.text();
 
         if (!upstream.ok) {
-          errors.push({ server: manager.baseUrl, status: upstream.status, error: bodyText });
-          continue;
+          throw Object.assign(
+            new Error(`HTTP ${upstream.status}`),
+            { server: manager.baseUrl, upstreamBody: bodyText }
+          );
         }
 
-        try {
-          const data = JSON.parse(bodyText);
-          if (data.qmgr && Array.isArray(data.qmgr)) {
-            const filtered = data.qmgr.filter((q) =>
-              String(q.name || '').toUpperCase().includes(MQ_FILTER.toUpperCase())
-            );
-            allQmgrs.push(...filtered);
-          }
-        } catch {
-          errors.push({ server: manager.baseUrl, error: 'Invalid JSON response' });
-        }
-      } catch (fetchError) {
-        errors.push({ server: manager.baseUrl, error: fetchError.message });
+        const data = JSON.parse(bodyText);
+        const qmgrs = Array.isArray(data.qmgr) ? data.qmgr : [];
+        return qmgrs.filter((q) =>
+          String(q.name || '').toUpperCase().includes(MQ_FILTER.toUpperCase())
+        );
+      })
+    );
+
+    const allQmgrs = [];
+    const errors   = [];
+
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        allQmgrs.push(...result.value);
+      } else {
+        errors.push({
+          server: config.queueManagers[i].baseUrl,
+          error:  result.reason?.message || 'Unknown error',
+        });
       }
-    }
+    });
 
     if (allQmgrs.length === 0) {
       return res.status(500).json({
-        error: 'No queue managers found from any configured server',
+        error:   'No queue managers found from any configured server',
         details: errors,
       });
     }
 
     return res.json({
-      qmgr: allQmgrs,
+      qmgr:          allQmgrs,
       partialErrors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Proxy request failed', message: error.message, cause: error.cause });
+    return res.status(500).json({
+      error:   'Proxy request failed',
+      message: error.message,
+      cause:   error.cause,
+    });
   }
 });
 
@@ -131,9 +154,8 @@ router.get('/', async (req, res) => {
  */
 router.get('/:name', async (req, res) => {
   try {
-    const { name } = req.params;
-    const baseUrl = getQueueManagerBaseUrl(name);
-    return await runMqscCommand(res, baseUrl, name, req.basicAuth, MQSC_COMMANDS.status);
+    const baseUrl = getQueueManagerBaseUrl(req.params.name);
+    return await runMqscCommand(res, baseUrl, req.params.name, req.basicAuth, MQSC_COMMANDS.status);
   } catch (error) {
     return res.status(500).json({ error: 'Proxy request failed', message: error.message, cause: error.cause });
   }
@@ -145,9 +167,8 @@ router.get('/:name', async (req, res) => {
  */
 router.get('/:name/lstr', async (req, res) => {
   try {
-    const { name } = req.params;
-    const baseUrl = getQueueManagerBaseUrl(name);
-    return await runMqscCommand(res, baseUrl, name, req.basicAuth, MQSC_COMMANDS.listener);
+    const baseUrl = getQueueManagerBaseUrl(req.params.name);
+    return await runMqscCommand(res, baseUrl, req.params.name, req.basicAuth, MQSC_COMMANDS.listener);
   } catch (error) {
     return res.status(500).json({ error: 'Proxy request failed', message: error.message, cause: error.cause });
   }
@@ -159,9 +180,8 @@ router.get('/:name/lstr', async (req, res) => {
  */
 router.get('/:name/chl', async (req, res) => {
   try {
-    const { name } = req.params;
-    const baseUrl = getQueueManagerBaseUrl(name);
-    return await runMqscCommand(res, baseUrl, name, req.basicAuth, MQSC_COMMANDS.channel);
+    const baseUrl = getQueueManagerBaseUrl(req.params.name);
+    return await runMqscCommand(res, baseUrl, req.params.name, req.basicAuth, MQSC_COMMANDS.channel);
   } catch (error) {
     return res.status(500).json({ error: 'Proxy request failed', message: error.message, cause: error.cause });
   }
@@ -169,33 +189,39 @@ router.get('/:name/chl', async (req, res) => {
 
 /**
  * GET /api/qmgr/:name/queues
- * Returns normalised queue details (depth, status, timestamps) via the MQ REST queue API.
+ * Returns normalised queue details via the MQ REST queue API.
  */
 router.get('/:name/queues', async (req, res) => {
   try {
     const { name } = req.params;
-    const baseUrl = getQueueManagerBaseUrl(name);
+    const baseUrl  = getQueueManagerBaseUrl(name);
 
-    const upstream = await fetch(
+    const upstream = await fetchWithTimeout(
       `${baseUrl}/ibmmq/rest/v1/admin/qmgr/${name}/queue` +
         `?attributes=storage,general&status=*&filter=${encodeURIComponent(QUEUE_FILTER)}`,
-      { method: 'GET', headers: { ...mqRestHeaders(req.basicAuth), 'ibm-mq-rest-csrf-token': 'value' } }
+      {
+        method:  'GET',
+        headers: { ...mqRestHeaders(req.basicAuth), 'ibm-mq-rest-csrf-token': 'value' },
+      }
     );
 
     const bodyText = await upstream.text();
 
     if (!upstream.ok) {
       return res.status(upstream.status).json({
-        error: 'Upstream API returned an error',
+        error:          'Upstream API returned an error',
         upstreamStatus: upstream.status,
-        upstreamBody: bodyText,
+        upstreamBody:   bodyText,
       });
     }
 
     try {
       return res.json(extractQueueDetails(JSON.parse(bodyText)));
     } catch (parseError) {
-      return res.status(500).json({ error: parseError.message || 'Upstream response was not valid JSON', upstreamBody: bodyText });
+      return res.status(500).json({
+        error:        parseError.message || 'Failed to parse queue details',
+        upstreamBody: bodyText,
+      });
     }
   } catch (error) {
     return res.status(500).json({ error: 'Proxy request failed', message: error.message, cause: error.cause });
@@ -208,9 +234,8 @@ router.get('/:name/queues', async (req, res) => {
  */
 router.get('/:name/disp', async (req, res) => {
   try {
-    const { name } = req.params;
-    const baseUrl = getQueueManagerBaseUrl(name);
-    return await runMqscCommand(res, baseUrl, name, req.basicAuth, MQSC_COMMANDS.displayQmgr);
+    const baseUrl = getQueueManagerBaseUrl(req.params.name);
+    return await runMqscCommand(res, baseUrl, req.params.name, req.basicAuth, MQSC_COMMANDS.displayQmgr);
   } catch (error) {
     return res.status(500).json({ error: 'Proxy request failed', message: error.message, cause: error.cause });
   }
