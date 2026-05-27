@@ -22,8 +22,7 @@ router.get('/config', (req, res) => {
     mq: {
       DefaultListenerKeyword: config.server?.DefaultListenerKeyword || 'APP',
     },
-    // Strip baseUrl — internal server addresses should not be sent to the browser
-    queueManagers: (config.queueManagers || []).map(({ name, qmName }) => ({ name, qmName })),
+    queueManagers: (config.queueManagers || []).map(({ name, qmName, baseUrl }) => ({ name, qmName, baseUrl })),
   });
 });
 
