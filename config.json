@@ -16,23 +16,23 @@
   "queueManagers": [
     {
       "name": "prod_emea",
-      "baseUrl": "https://example.com",
-      "qmName": "XXXX_QM"
+      "baseUrl": "https://epis.dsv.com",
+      "qmName": "QMEPIS_P1"
     },
     {
       "name": "prod_afri",
-      "baseUrl": "https://afri.example.com",
-      "qmName": "XXXX_AFRI_QM"
+      "baseUrl": "https://afri.epis.dsv.com",
+      "qmName": "QMEPIS_AFRI_P1"
     },
     {
       "name": "prod_amer",
-      "baseUrl": "https://amer.example.com",
-      "qmName": "XXXX_AMER_QM"
+      "baseUrl": "https://amer.epis.dsv.com",
+      "qmName": "QMEPIS_AMER_P1"
     },
     {
       "name": "prod_apac",
-      "baseUrl": "https://apac.example.com",
-      "qmName": "XXXX_APAC_QM"
+      "baseUrl": "https://apac.epis.dsv.com",
+      "qmName": "QMEPIS_APAC_P1"
     }
   ]
 }
