@@ -48,18 +48,15 @@ export default function ManagerListPanel({ managers, onClose }) {
           <table className="sp-table">
             <thead>
               <tr>
-                <th>Queue Manager</th>
+                <th>Queue Managers</th>
                 <th>Region</th>
-                <th>Environment</th>
                 <th>Status</th>
                 <th>Listener</th>
-                <th>Command Server</th>
-                <th>Active Connections</th>
+                <th>Active Conn.</th>
                 <th>Abnormal Queues</th>
                 <th>Running Ch.</th>
                 <th>Retrying Ch.</th>
                 <th>Stopped Ch.</th>
-                <th>MQ Version</th>
                 <th>Start Date</th>
               </tr>
             </thead>
@@ -68,7 +65,6 @@ export default function ManagerListPanel({ managers, onClose }) {
                 <tr key={m.name} className="sp-row">
                   <td className="sp-name">{m.name}</td>
                   <td>{m.region}</td>
-                  <td>{m.environment}</td>
                   <td>
                     <span className={`status ${statusClass(m.status)}`}>
                       {m.status || "-"}
@@ -77,11 +73,6 @@ export default function ManagerListPanel({ managers, onClose }) {
                   <td>
                     <span className={`status ${statusClass(m.listener)}`}>
                       {m.listener || "-"}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`status ${statusClass(m.commandServer)}`}>
-                      {m.commandServer || "-"}
                     </span>
                   </td>
                   <td className="sp-num">{m.activeConnections}</td>
@@ -103,7 +94,6 @@ export default function ManagerListPanel({ managers, onClose }) {
                       ? <span className="sp-badge sp-badge--bad">{m.stoppedChannels}</span>
                       : <span className="sp-badge sp-badge--good">0</span>}
                   </td>
-                  <td className="sp-muted">{m.mqVersion || "-"}</td>
                   <td className="sp-muted">{m.startDate || "-"}</td>
                 </tr>
               ))}
