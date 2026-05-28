@@ -2,14 +2,17 @@
 import { createPortal } from "react-dom";
 import "./App.css";
 
-import LoginDialog from "./components/LoginDialog";
+import ChannelListPanel from "./components/ChannelListPanel";
+import LoginDialog      from "./components/LoginDialog";
+import ManagerListPanel from "./components/ManagerListPanel";
 import QueueManagerCard from "./components/QueueManagerCard";
-import SummaryGrid from "./components/SummaryGrid";
-import { useMqData } from "./hooks/useMqData";
+import QueueStatusPanel from "./components/QueueStatusPanel";
+import SummaryGrid      from "./components/SummaryGrid";
+import { useMqData }      from "./hooks/useMqData";
+import { usePanelFilter } from "./hooks/usePanelFilter";
 
 export default function App() {
   const {
-    // State
     loading,
     error,
     apiErrors,
@@ -21,10 +24,9 @@ export default function App() {
     expandedQueues,
     expandedChannels,
     isDarkTheme,
-    // Derived
     summary,
     sortedManagers,
-    // Actions
+    mqData,
     handleLogin,
     handleLogout,
     toggleExpanded,
@@ -34,8 +36,21 @@ export default function App() {
     toggleTheme,
   } = useMqData();
 
+  // Single unified panel state — only one panel open at a time
+  const {
+    activePanel,
+    openPanel,
+    closePanel,
+    allManagers,
+    activeChannelStatus,
+    channelData,
+    queueCounts,
+    filteredQueues,
+  } = usePanelFilter(mqData);
+
   return (
     <main className="page" data-theme={isDarkTheme ? "dark" : "light"}>
+
       {/* ── Hero / header ───────────────────────────────────────────────── */}
       <section className="hero">
         <div>
@@ -44,12 +59,8 @@ export default function App() {
         <div className="hero-controls">
           {credentials && (
             <div className="user-info">
-              <span>
-                Logged in as: <strong>{credentials.username}</strong>
-              </span>
-              <button onClick={handleLogout} className="logout-btn">
-                Logout
-              </button>
+              <span>Logged in as: <strong>{credentials.username}</strong></span>
+              <button onClick={handleLogout} className="logout-btn">Logout</button>
             </div>
           )}
           <button
@@ -75,16 +86,43 @@ export default function App() {
 
       {/* ── Top-level error banner ──────────────────────────────────────── */}
       {error && (
-        <div
-          className="footer-note"
-          style={{ color: "var(--danger)", marginBottom: "18px" }}
-        >
+        <div className="footer-note" style={{ color: "var(--danger)", marginBottom: "18px" }}>
           {error}
         </div>
       )}
 
-      {/* ── Summary cards ───────────────────────────────────────────────── */}
-      <SummaryGrid summary={summary} />
+      {/* ── Summary cards — single onCardClick handler for all 7 buttons ── */}
+      <SummaryGrid
+        summary={summary}
+        queueCounts={queueCounts}
+        activePanel={activePanel}
+        onCardClick={openPanel}
+      />
+
+      {/* ── Panels — only one renders at a time ────────────────────────── */}
+
+      {activePanel === "managers" && (
+        <ManagerListPanel
+          managers={allManagers}
+          onClose={closePanel}
+        />
+      )}
+
+      {activeChannelStatus && (
+        <ChannelListPanel
+          channelStatus={activeChannelStatus}
+          channels={channelData[activeChannelStatus]}
+          onClose={closePanel}
+        />
+      )}
+
+      {["Critical", "Warning", "Processing"].includes(activePanel) && (
+        <QueueStatusPanel
+          activeFilter={activePanel}
+          queues={filteredQueues}
+          onClose={closePanel}
+        />
+      )}
 
       {/* ── Partial / upstream error cards ─────────────────────────────── */}
       {apiErrors.length > 0 && (
