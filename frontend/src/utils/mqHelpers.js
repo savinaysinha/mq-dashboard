@@ -72,6 +72,43 @@ export function parseDate(value) {
 }
 
 // ─── Queue enrichment ─────────────────────────────────────────────────────────
+/**
+ * Enriches a flat array of queue objects with a computed `status` and
+ * `statusPriority` field, then sorts the result so the most critical queues
+ * appear first.
+ *
+ * ─── Status classification rules (evaluated in order) ───────────────────────
+ *
+ *  "Critical"  — any ONE of the following is true:
+ *  1. Queue is more than 75 % full.
+ *   
+ *    • queueCapacityPercent > 75
+ * 
+ *  2. No consumer is listening on the queue AND Queue has any queueCapacityPercent.
+ *   
+ *    • queueCapacityPercent > 0 AND openInputCount === 0
+ * 
+ *  3. Consumer is listening on the queue AND the gap between lastPut and lastGet > 60 min
+ * 
+ *    • openInputCount > 0 AND diffMinutes > 60 min AND uncommittedMessages > 0
+ * 
+ *  "Warning"   — none of the Critical conditions apply, but any ONE of:
+ *  1. Queue is more than 50 % full.
+ * 
+ *    • queueCapacityPercent > 50
+ * 
+ * 2.  Consumer is listening on the queue AND the gap between lastPut and lastGet > 60 min AND A message has been sitting for over 30 min.
+ * 
+ *    •  diffMinutes > 30 min AND oldestMessageAge > 3600*8 (8 hours)
+ *
+ *  "Processing" — none of the above conditions apply; queue is healthy.
+ *
+ * ─── Sort order ─────────────────────────────────────────────────────────────
+ *
+ *  statusPriority values:  Critical = 0  |  Warning = 1  |  Processing = 2
+ *  The returned array is sorted ascending by statusPriority so Critical queues
+ *  always surface at the top of the dashboard table.
+ */ 
 
 export function addQueueStatus(data) {
   return (data || [])
@@ -83,19 +120,31 @@ export function addQueueStatus(data) {
       const lastPutDate          = parseDate(item.lastPut);
       const diffMinutes =
         lastGetDate && lastPutDate ? Math.abs(lastPutDate - lastGetDate) / 60000 : null;
-
+      const uncommittedMessages = Number(item.uncommittedMessages ?? 0);
       let status = "Processing";
 
       if (
-        openInputCount === 0 ||
-        queueCapacityPercent > 75 ||
-        oldestSeconds > 3600 ||
-        (openInputCount !== 0 && diffMinutes !== null && diffMinutes > 60)
+        queueCapacityPercent > 75
       ) {
         status = "Critical";
-      } else if (
-        queueCapacityPercent > 50 ||
-        oldestSeconds > 1800 ||
+      }else if (
+        queueCapacityPercent > 0 &&
+        openInputCount === 0
+      ) {
+        status = "Critical";
+      }else if (
+        openInputCount === 0 && 
+       (diffMinutes !== null && diffMinutes > 60) &&
+        uncommittedMessages > 0
+      ) {
+        status = "Critical";
+      }else if (
+        queueCapacityPercent > 50
+      ) {
+        status = "Warning";
+      }
+      else if (
+        oldestSeconds > 3600*8 ||
         (openInputCount !== 0 && diffMinutes !== null && diffMinutes > 30)
       ) {
         status = "Warning";
