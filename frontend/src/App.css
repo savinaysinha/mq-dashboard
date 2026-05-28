@@ -1513,7 +1513,7 @@ tr:last-child td {
   white-space: nowrap;
 }
 
-.sp-num   { text-align: right; font-variant-numeric: tabular-nums; }
+.sp-num   { text-align: center; font-variant-numeric: tabular-nums; }
 .sp-muted { color: var(--text-muted, #888); font-size: 0.78rem; }
 
 /* ── Inline badges (counts in ManagerListPanel) ──────────────────────────── */
