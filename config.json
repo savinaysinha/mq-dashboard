@@ -1,0 +1,38 @@
+{
+  "server": {
+    "port": 3000,
+    "credentialStorageKey": "mq_credentials",
+    "credentialExpiryHours": 4,
+    "mqFilter": "XXIS",
+    "queueFilter": "status.currentDepth:greaterThanOrEqualTo:0",
+    "DefaultListenerKeyword": "APP"
+  },
+  "ui": {
+    "loginTitle": "MQ Administrator Login",
+    "loginDescription": "Please enter your AD credentials to access the dashboard.",
+    "refreshIntervalSeconds": 60,
+    "mqWebConsoleSuffix": "/ibmmq/console/"
+  },
+  "queueManagers": [
+    {
+      "name": "prod_emea",
+      "baseUrl": "https://xxis.example.com",
+      "qmName": "QMXX_1"
+    },
+    {
+      "name": "prod_afri",
+      "baseUrl": "https://afri.xxis.example.com",
+      "qmName": "QMXX_AFRI_1"
+    },
+    {
+      "name": "prod_amer",
+      "baseUrl": "https://amer.xxis.example.com",
+      "qmName": "QMXX_AMER_1"
+    },
+    {
+      "name": "prod_apac",
+      "baseUrl": "https://apac.xxis.example.com",
+      "qmName": "QMXX_APAC_1"
+    }
+  ]
+}
