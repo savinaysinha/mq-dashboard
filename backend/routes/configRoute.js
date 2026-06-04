@@ -23,6 +23,7 @@ router.get('/config', (req, res) => {
       DefaultListenerKeyword: config.server?.DefaultListenerKeyword || 'APP',
     },
     queueManagers: (config.queueManagers || []).map(({ name, qmName, baseUrl }) => ({ name, qmName, baseUrl })),
+    queueExclusionConfig: config.queueExclusionConfig || [],
   });
 });
 

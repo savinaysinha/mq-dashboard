@@ -24,6 +24,8 @@ export const MQSC_COMMANDS = {
   displayQmgr: "DISPLAY QMGR ALL",
 };
 
+export const queueExclusionConfig = config.queueExclusionConfig || [];
+
 /**
  * Resolves the base URL for a queue manager by name.
  * Falls back to the first configured manager if not found.

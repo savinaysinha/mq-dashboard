@@ -33,27 +33,32 @@ export function getBannerClass(item) {
   const listener = normalize(item.queueManager?.listener);
 
 
+
   // Check for critical issues that warrant a red "issue" banner:
   // - Queue manager status is not "running"
   // - Listener is not "running"
   // - Any channels are in retrying state
   // - 10 or more abnormal queues
+  // - Any abnormal queue with "Critical" status
   const redIssue =
     status !== "running" ||
     // commandServer !== "running"  ||  // Currently disabled
     (item.channels?.retrying?.length ?? 0) > 0 ||
     listener !== "running" || 
-    (item.abnormalQueues?.length ?? 0) >= 10;
+    (item.abnormalQueues?.length ?? 0) >= 10 || 
+    item.abnormalQueues.filter(a => a.status === "Critical").length > 0;
 
 
   // Check for non-critical issues that warrant a "warning" banner:
   // - Only evaluated if no redIssue is present
   // - Any channels are in stopped state
   // - At least 1 abnormal queue (but less than 10, otherwise redIssue triggers)
+  // - Any abnormal queue with "Warning" status
   const warningIssue =
     !redIssue && (
       (item.channels?.stopped?.length ?? 0) > 0 || 
-      (item.abnormalQueues?.length ?? 0) > 0
+      (item.abnormalQueues?.length ?? 0) > 0 ||
+      item.abnormalQueues.filter(a => a.status === "Warning").length > 0
     );
 
 

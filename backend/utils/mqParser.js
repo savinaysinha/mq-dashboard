@@ -54,25 +54,46 @@ function formatDuration(seconds) {
   return parts.join(" ");
 }
 
-// ─── Public ───────────────────────────────────────────────────────────────────
+/**
+ * Helper function to convert an MQ wildcard pattern (e.g., "ORDERS.*") 
+ * into a valid JavaScript RegExp object.
+ */
+function patternToRegExp(pattern) {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  const regexStr = '^' + escaped.replace(/\*/g, '.*') + '$';
+  return new RegExp(regexStr, 'i');
+}
 
 /**
- * Extracts and normalises queue details from the MQ queue REST payload.
- * Filters out SYSTEM.* and AMQ.* queues automatically.
- *
- * @param   {object}   payload - Raw JSON from GET /ibmmq/rest/v1/admin/qmgr/:name/queue
- * @returns {object[]}         - Normalised queue records
+ * Extracts IBM MQ queue properties from a raw payload object.
+ * Categorizes and returns both included queues and excluded/ignored queues.
+ * * @param {Object} payload - Raw nested payload containing the queue definitions array.
+ * @param {Array<string>} [exclusionConfig=[]] - Array of exact names or patterns to exclude.
+ * @returns {{ queues: Array<Object>, excludedQueues: Array<Object> }} Parent object containing both lists.
  */
-export function extractQueueDetails(payload) {
+export function extractQueueDetails(payload, exclusionConfig = []) {
   const firstChildArray = Object.values(payload || {})[0];
 
   if (!Array.isArray(firstChildArray)) {
     throw new Error("Payload must contain an array as its first child property.");
   }
 
-  return firstChildArray
-    .filter((q) => !q.name?.startsWith("SYSTEM") && !q.name?.startsWith("AMQ"))
-    .map((q) => ({
+  // Pre-compile the configuration strings/wildcards into RegExp objects
+  const exclusionRegexes = (exclusionConfig || []).map(pattern => patternToRegExp(pattern));
+
+  // Initialize both destination arrays
+  const queues = [];
+  const excludedQueues = [];
+
+  firstChildArray.forEach((q) => {
+    const queueName = q.name || "";
+
+    // 1. Determine if the queue should be excluded
+    // const isSystemQueue = queueName.startsWith("SYSTEM") || queueName.startsWith("AMQ");
+    const isExcludedByConfig = exclusionRegexes.some((regex) => regex.test(queueName));
+
+    // 2. Map the data out into our clean structure
+    const formattedQueue = {
       name:                 q.name,
       currentDepth:         q.status?.currentDepth         ?? 0,
       lastGet:              formatDateTime(q.status?.lastGet),
@@ -87,5 +108,25 @@ export function extractQueueDetails(payload) {
             (((q.status?.currentDepth ?? 0) / q.storage.maximumDepth) * 100).toFixed(2)
           )
         : 0,
-    }));
+    };
+
+    // 3. Route to the appropriate array based on its exclusion status
+    // if (isSystemQueue || isExcludedByConfig) {
+     if (isExcludedByConfig) {
+      // Add extra context if you want to know *why* it was excluded down the road
+      excludedQueues.push({
+        ...formattedQueue,
+        // exclusionReason: isSystemQueue ? "System Queue (SYSTEM/AMQ)" : "Matched Configuration Pattern"
+         exclusionReason: "Matched Configuration Pattern"
+      });
+    } else {
+      queues.push(formattedQueue);
+    }
+  });
+
+  // Return the parent wrapper containing both lists
+  return {
+    queues,
+    excludedQueues
+  };
 }

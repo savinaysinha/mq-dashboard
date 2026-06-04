@@ -195,7 +195,10 @@ export function useMqData() {
       ]);
 
     const DefaultListenerKeyword = appConfig?.mq?.DefaultListenerKeyword || "APP";
-    const allQueues = addQueueStatus(qStatusPayload);
+    const allQueues = addQueueStatus(qStatusPayload.queues);
+    const excludedQueues = qStatusPayload.excludedQueues || [];
+    console.log(excludedQueues);
+    
 
     const listenerEntry = lstrStatusPayload?.find((item) =>
       item.LISTENER?.toLowerCase().includes(DefaultListenerKeyword.toLowerCase())
@@ -221,6 +224,7 @@ export function useMqData() {
         mqVersion:         qmStatusPayload?.[0]?.INSTDESC ?? "",
       },
       allQueues,
+      excludedQueues,
       abnormalQueues: allQueues.filter((q) => q.status !== "Processing"),
       channels: {
         running:  (chlStatusPayload || []).filter((c) => c.STATUS === "RUNNING"  && c.CHLTYPE === "SDR").map(buildChannelItem),

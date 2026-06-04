@@ -15,6 +15,7 @@ import {
   QUEUE_FILTER,
   MQSC_COMMANDS,
   getQueueManagerBaseUrl,
+  queueExclusionConfig,
 } from '../config.js';
 import { requireAuth } from '../utils/auth.js';
 import { parseMqscResponse, extractQueueDetails } from '../utils/mqParser.js';
@@ -216,7 +217,7 @@ router.get('/:name/queues', async (req, res) => {
     }
 
     try {
-      return res.json(extractQueueDetails(JSON.parse(bodyText)));
+      return res.json(extractQueueDetails(JSON.parse(bodyText), config.queueExclusionConfig));
     } catch (parseError) {
       return res.status(500).json({
         error:        parseError.message || 'Failed to parse queue details',
