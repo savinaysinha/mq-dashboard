@@ -155,7 +155,7 @@ export default function QueueManagerCard({
         {/* B) Queue details */}
         <section className="block">
           <h3>B) Queue details and processing status</h3>
-          {item.allQueues.length > 0 ? (
+          {item.allQueues.filter((q) => q.status !== "Processing").length > 0 ? (
             <div className="table-wrap">
               <table>
                 <thead>
@@ -166,7 +166,7 @@ export default function QueueManagerCard({
                   </tr>
                 </thead>
                 <tbody>
-                  {item.allQueues.map((q) => {
+                  {item.allQueues.filter((q) => q.status !== "Processing").map((q) => {
                     const queueKey = `${item.name}::${q.name}`;
                     const queueExpanded = expandedQueues.includes(queueKey);
 
@@ -191,7 +191,7 @@ export default function QueueManagerCard({
                             {q.currentDepth}
                           </td>
                           <td className="status-cell">
-                            <span className={`status ${statusClass(q.status)}`}>
+                            <span className={`status ${statusClass(q.status)}`}  title={q.substatus}>
                               {q.status}
                             </span>
                           </td>
@@ -223,6 +223,10 @@ export default function QueueManagerCard({
                                 <div>
                                   <strong>Queue Depth Utilization:</strong>{" "}
                                   {q.queueCapacityPercent}%
+                                </div>
+                                <div className="queue-details-grid-description">
+                                  <strong>Issue:</strong>{" "}
+                                  {q.statusDescription}
                                 </div>
                               </div>
                             </td>

@@ -75,8 +75,8 @@ export default function SummaryGrid({ summary, queueCounts, activePanel, onCardC
               value:      summary.retryingChannels,
               hint:       "Click to view all retrying channels.",
               activeHint: "Showing retrying channels ↓",
-              colorClass: "summary-card-orange",
-              icon:       "🟡",
+              colorClass: "summary-card-critical",
+              icon:       "🔴",
             },
             {
               key:        "stopped",

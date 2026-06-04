@@ -12,21 +12,52 @@ export function statusClass(value) {
   return "warn";
 }
 
+/**
+ * Determines the banner class for a queue manager item based on its health status.
+ * 
+ * Returns:
+ *   - "issue"     : Critical problems detected (red banner)
+ *   - "warning"   : Non-critical issues detected (yellow/orange banner)
+ *   - "healthy"   : No issues detected (green banner)
+ * 
+ * @param {Object} item - The queue manager item containing status, channels, and queues info
+ * @returns {string} The banner class: "issue", "warning", or "healthy"
+ */
 export function getBannerClass(item) {
+  // Normalize strings for case-insensitive comparison
   const normalize = (value) => String(value || "").trim().toLowerCase();
+  
+  // Extract and normalize key status fields from the queue manager
   const status = normalize(item.queueManager?.status);
-  const commandServer = normalize(item.queueManager?.commandServer);
+  // const commandServer = normalize(item.queueManager?.commandServer); // Currently disabled
   const listener = normalize(item.queueManager?.listener);
 
+
+  // Check for critical issues that warrant a red "issue" banner:
+  // - Queue manager status is not "running"
+  // - Listener is not "running"
+  // - Any channels are in retrying state
+  // - 10 or more abnormal queues
   const redIssue =
     status !== "running" ||
-    commandServer !== "running" ||
-    (item.channels?.stopped?.length ?? 0) > 0 ||
-    (item.channels?.retrying?.length ?? 0) > 0;
+    // commandServer !== "running"  ||  // Currently disabled
+    (item.channels?.retrying?.length ?? 0) > 0 ||
+    listener !== "running" || 
+    (item.abnormalQueues?.length ?? 0) >= 10;
 
+
+  // Check for non-critical issues that warrant a "warning" banner:
+  // - Only evaluated if no redIssue is present
+  // - Any channels are in stopped state
+  // - At least 1 abnormal queue (but less than 10, otherwise redIssue triggers)
   const warningIssue =
-    !redIssue && (listener !== "running" || (item.abnormalQueues?.length ?? 0) > 0);
+    !redIssue && (
+      (item.channels?.stopped?.length ?? 0) > 0 || 
+      (item.abnormalQueues?.length ?? 0) > 0
+    );
 
+
+  // Return the appropriate banner class based on issue severity
   return redIssue ? "issue" : warningIssue ? "warning" : "healthy";
 }
 
@@ -71,91 +102,116 @@ export function parseDate(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-// ─── Queue enrichment ─────────────────────────────────────────────────────────
 /**
- * Enriches a flat array of queue objects with a computed `status` and
- * `statusPriority` field, then sorts the result so the most critical queues
- * appear first.
- *
- * ─── Status classification rules (evaluated in order) ───────────────────────
- *
- *  "Critical"  — any ONE of the following is true:
- *  1. Queue is more than 75 % full.
- *   
- *    • queueCapacityPercent > 75
- * 
- *  2. No consumer is listening on the queue AND Queue has any queueCapacityPercent.
- *   
- *    • queueCapacityPercent > 0 AND openInputCount === 0
- * 
- *  3. Consumer is listening on the queue AND the gap between lastPut and lastGet > 60 min
- * 
- *    • openInputCount > 0 AND diffMinutes > 60 min AND uncommittedMessages > 0
- * 
- *  "Warning"   — none of the Critical conditions apply, but any ONE of:
- *  1. Queue is more than 50 % full.
- * 
- *    • queueCapacityPercent > 50
- * 
- * 2.  Consumer is listening on the queue AND the gap between lastPut and lastGet > 60 min AND A message has been sitting for over 30 min.
- * 
- *    •  diffMinutes > 30 min AND oldestMessageAge > 3600*8 (8 hours)
- *
- *  "Processing" — none of the above conditions apply; queue is healthy.
- *
- * ─── Sort order ─────────────────────────────────────────────────────────────
- *
- *  statusPriority values:  Critical = 0  |  Warning = 1  |  Processing = 2
- *  The returned array is sorted ascending by statusPriority so Critical queues
- *  always surface at the top of the dashboard table.
- */ 
-
+ * Processes a list of IBM MQ queue metric objects, evaluates their operational health,
+ * assigns an alert status (Critical, Warning, Processing) with descriptive rationales, 
+ * and sorts them by priority.
+ * * @param {Array<Object>} data - Raw queue metrics from the Queue Manager monitoring agent.
+ * @returns {Array<Object>} Sorted list of queue items with injected `status`, `statusDescription`, and `statusPriority`.
+ */
 export function addQueueStatus(data) {
+  // Capture current system execution time to calculate real-time processing latency
+  const NOW = new Date();
+
   return (data || [])
     .map((item) => {
+      // 1. Sanitize and normalize raw inputs with default fallbacks
+      const currentDepth         = Number(item.currentDepth ?? 0);
       const openInputCount       = Number(item.openInputCount ?? 0);
+      const openOutputCount      = Number(item.openOutputCount ?? 0); 
       const queueCapacityPercent = Number(item.queueCapacityPercent ?? 0);
       const oldestSeconds        = durationToSeconds(item.oldestMessageAge);
       const lastGetDate          = parseDate(item.lastGet);
       const lastPutDate          = parseDate(item.lastPut);
-      const diffMinutes =
-        lastGetDate && lastPutDate ? Math.abs(lastPutDate - lastGetDate) / 60000 : null;
-      const uncommittedMessages = Number(item.uncommittedMessages ?? 0);
+      const uncommittedMessages  = Number(item.uncommittedMessages ?? 0);
+
+      // 2. Compute absolute metric deltas (Minutes elapsed since the last successful GET)
+      const minutesSinceLastGet = lastGetDate ? (NOW - lastGetDate) / 60000 : null;
+
+      // Default fallback values
       let status = "Processing";
+      let substatus = "Healthy";
+      let statusDescription = "Queue is operating normally within safe parameters.";
 
-      if (
-        queueCapacityPercent > 75
-      ) {
+      // =========================================================================
+      // LEVEL 1: CRITICAL CONDITIONS (Requires immediate intervention)
+      // =========================================================================
+
+      // CASE A: Bad disconnect / Orphaned In-Doubt Transaction (Uncommitted GET scenario)
+      if (uncommittedMessages > 0 && openInputCount === 0) {
         status = "Critical";
-      }else if (
-        queueCapacityPercent > 0 &&
-        openInputCount === 0
-      ) {
-        status = "Critical";
-      }else if (
-        openInputCount === 0 && 
-       (diffMinutes !== null && diffMinutes > 60) &&
-        uncommittedMessages > 0
-      ) {
-        status = "Critical";
-      }else if (
-        queueCapacityPercent > 50
-      ) {
-        status = "Warning";
+        substatus = "Critical Transactional State";
+        statusDescription = `There are ${uncommittedMessages} uncommitted messages (likely from an uncommitted GET), but the application disconnected improperly leaving 0 active consumers. Messages are locked in an in-doubt transaction.`;
       }
-      else if (
-        oldestSeconds > 3600*8 ||
-        (openInputCount !== 0 && diffMinutes !== null && diffMinutes > 30)
-      ) {
-        status = "Warning";
+      
+      // Case B: Queue is filling past danger thresholds (Risk of MQRC_Q_FULL)
+      if (queueCapacityPercent >= 85) {
+        status = "Critical"; 
+        substatus = "At Risk";
+        statusDescription = `Queue capacity is critically high at ${queueCapacityPercent}%. Upstream applications risk MQRC_Q_FULL errors.`;
+      } 
+      // Case C: Orphaned Backlog. Messages are actively waiting, but zero consumer applications are connected.
+      else if (currentDepth > 0 && openInputCount === 0) {
+        status = "Critical"; 
+        substatus = "Orphaned Backlog";
+        statusDescription = `${currentDepth} messages are waiting on the queue, but there are zero active consumers (Input Count = 0).`;
+      } 
+      // Case D: Stalled Consumer. Consumers are connected, but haven't successfully processed data in >10 mins.
+      else if (currentDepth > 0 && minutesSinceLastGet !== null && minutesSinceLastGet > 10) {
+        status = "Critical"; 
+        substatus = "Stalled Consumer";
+        statusDescription = `${currentDepth} messages are backed up. Consumers are connected, but the last successful message read (GET) was ${Math.round(minutesSinceLastGet)} minutes ago.`;
       }
 
+      // =========================================================================
+      // LEVEL 2: WARNING CONDITIONS (Performance degradations & bottlenecks)
+      // =========================================================================
+      
+      // Case A: Transactional Lock. In-flight syncpoint transactions are lingering for over 2 minutes.
+      else if (currentDepth > 0 && uncommittedMessages > 0 && minutesSinceLastGet !== null && minutesSinceLastGet > 2) {
+        status = "Warning";  
+        substatus = "Transactional Lock";
+        statusDescription = `There are ${uncommittedMessages} uncommitted messages locked in an active transaction for over ${Math.round(minutesSinceLastGet)} minutes.`;
+      }
+      // Case B: Influx Bottleneck. Queue depth has exceeded safe capacities (50%+).
+      else if (queueCapacityPercent >= 50) {
+        status = "Warning";  
+        substatus = "Influx Bottleneck";
+        statusDescription = `Queue capacity has risen to ${queueCapacityPercent}%. Inbound messages may be out-pacing consumer drain rate.`;
+      }
+      // Case C: Degraded Performance. Consumers are active but slow, letting messages linger past 2 minutes.
+      else if (currentDepth > 0 && minutesSinceLastGet !== null && minutesSinceLastGet > 2) {
+        status = "Warning";  
+        substatus = "Degraded Performance";
+        statusDescription = `The queue has a depth of ${currentDepth} and processing has slowed. The last message read (GET) was ${Math.round(minutesSinceLastGet)} minutes ago.`;
+      }
+
+      // =========================================================================
+      // LEVEL 3: PROCESSING / HEALTHY CONDITIONS (Nominal system states)
+      // =========================================================================
+      else {
+        status = "Processing"; 
+        substatus = "Healthy";
+        if (currentDepth === 0) {
+          statusDescription = openInputCount > 0 
+            ? "Queue is idle and empty. Consumers are connected and waiting for work." 
+            : "Queue is passive and empty. No active applications are connected.";
+        } else {
+          statusDescription = `Data flowing smoothly. Queue depth is ${currentDepth} with healthy consumer processing times.`;
+        }
+      }
+
+      // Append calculated values to the object mapping
       return {
         ...item,
         status,
+        substatus,
+        statusDescription,
+        // Priority weight allocation: Critical (0) > Warning (1) > Processing (2)
         statusPriority: status === "Critical" ? 0 : status === "Warning" ? 1 : 2,
       };
     })
+    // Sort array in ascending order based on status priority (Critical items bubble up first)
     .sort((a, b) => a.statusPriority - b.statusPriority);
 }
 

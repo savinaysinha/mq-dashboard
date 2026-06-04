@@ -13,7 +13,7 @@ export default function ChannelListPanel({ channelStatus, channels, onClose }) {
 
   const STATUS_META = {
     running:  { icon: "🟢", label: "Running Channels",  colorMod: "running",  description: "Channels that are currently active and healthy." },
-    retrying: { icon: "🟡", label: "Retrying Channels", colorMod: "retrying", description: "Channels attempting to reconnect — may need investigation." },
+    retrying: { icon: "🔴", label: "Retrying Channels", colorMod: "stopped", description: "Channels attempting to reconnect — may need investigation." },
     stopped:  { icon: "🔴", label: "Stopped Channels",  colorMod: "stopped",  description: "Channels that have stopped — require restart or investigation." },
   };
 

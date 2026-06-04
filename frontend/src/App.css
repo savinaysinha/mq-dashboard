@@ -785,6 +785,15 @@ tr:last-child td {
   color: var(--text);
 }
 
+.queue-details-grid-description {
+  display: inline;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  width: 310%;
+  font-size: 14px;
+  color: var(--text);
+}
+
 .queue-details-grid > div {
   padding: 12px 14px;
   border: 1px solid rgba(15, 32, 60, 0.12);
